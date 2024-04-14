@@ -1,0 +1,166 @@
+#include <Windows.h>
+#include <iostream>
+#include <string>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+
+LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+void LoadDictionary(const std::wstring& path);
+void SaveDictionary(const std::wstring& path);
+void AddWordToDictionary(const std::wstring& word);
+
+// Оголошення глобальних змінних для тем
+HBRUSH lightBackgroundBrush = CreateSolidBrush(RGB(255, 255, 255));
+HBRUSH darkBackgroundBrush = CreateSolidBrush(RGB(50, 50, 50));
+COLORREF lightTextColor = RGB(0, 0, 0);
+COLORREF darkTextColor = RGB(255, 255, 255);
+
+// Словник для зберігання слів
+std::vector<std::wstring> dictionary;
+std::wstring defaultDictionaryPath = L"dictionary.txt";
+
+// Функція для створення вікна налаштувань
+void CreateSettingsWindow() {
+    // Створення класу вікна
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WindowProcedure;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = L"SettingsWindowClass";
+    RegisterClass(&wc);
+
+    // Створення вікна
+    HWND hwnd = CreateWindow(wc.lpszClassName, L"Налаштування", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, nullptr, nullptr, wc.hInstance, nullptr);
+
+    // Додавання елементів у вікно налаштувань
+
+    // Текстове поле для введення шляху до словника
+    CreateWindowW(L"STATIC", L"Шлях до словника:", WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 20, 150, 20, hwnd, nullptr, nullptr, nullptr);
+    HWND hDictionaryEdit = CreateWindowW(L"EDIT", defaultDictionaryPath.c_str(), WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 180, 20, 180, 20, hwnd, nullptr, nullptr, nullptr);
+    SendMessage(hDictionaryEdit, EM_SETREADONLY, TRUE, 0);
+
+    // Вибір теми програми
+    CreateWindowW(L"STATIC", L"Тема програми:", WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 60, 150, 20, hwnd, nullptr, nullptr, nullptr);
+    HWND hThemeComboBox = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 180, 60, 180, 150, hwnd, (HMENU)1001, nullptr, nullptr, nullptr);
+    SendMessageW(hThemeComboBox, CB_ADDSTRING, 0, (LPARAM)L"Світла");
+    SendMessageW(hThemeComboBox, CB_ADDSTRING, 0, (LPARAM)L"Темна");
+
+    // Вибір мови
+    CreateWindowW(L"STATIC", L"Мова програми:", WS_CHILD | WS_VISIBLE | SS_LEFT, 20, 100, 150, 20, hwnd, nullptr, nullptr, nullptr);
+    HWND hLanguageComboBox = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST, 180, 100, 180, 150, hwnd, (HMENU)1002, nullptr, nullptr, nullptr);
+    SendMessageW(hLanguageComboBox, CB_ADDSTRING, 0, (LPARAM)L"Англійська");
+    SendMessageW(hLanguageComboBox, CB_ADDSTRING, 0, (LPARAM)L"Українська");
+    SendMessageW(hLanguageComboBox, CB_ADDSTRING, 0, (LPARAM)L"Російська");
+
+    // Прапорець для вибору автоматичного виправлення слів
+    CreateWindowW(L"BUTTON", L"Автоматичне виправлення слів", WS_CHILD | WS_VISIBLE | BS_CHECKBOX, 20, 140, 200, 20, hwnd, nullptr, nullptr, nullptr);
+
+    // Кнопка "Зберегти"
+    CreateWindowW(L"BUTTON", L"Зберегти", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 150, 180, 100, 30, hwnd, (HMENU)1, nullptr, nullptr);
+
+    // Показ вікна
+    ShowWindow(hwnd, SW_SHOW);
+}
+
+// Функція для завантаження словника із файлу
+void LoadDictionary(const std::wstring& path) {
+    std::wifstream dictionaryFile(path);
+    if (dictionaryFile.is_open()) {
+        std::wstring word;
+        while (std::getline(dictionaryFile, word)) {
+            dictionary.push_back(word);
+        }
+        dictionaryFile.close();
+    }
+}
+
+// Функція для збереження словника у файл
+void SaveDictionary(const std::wstring& path) {
+    std::wofstream dictionaryFile(path);
+    if (dictionaryFile.is_open()) {
+        for (const auto& word : dictionary) {
+            dictionaryFile << word << std::endl;
+        }
+        dictionaryFile.close();
+    }
+}
+
+// Функція для додавання слова до словника
+void AddWordToDictionary(const std::wstring& word) {
+    // Перевіряємо, чи таке слово ще не збережено у словнику
+    auto it = std::find(dictionary.begin(), dictionary.end(), word);
+    if (it == dictionary.end()) {
+        dictionary.push_back(word);
+    }
+}
+
+// Функція для зміни теми вікна
+void ChangeTheme(HWND hwnd, bool isDarkTheme) {
+    if (isDarkTheme) {
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, (LONG_PTR)darkBackgroundBrush);
+        SetTextColor(GetDC(hwnd), darkTextColor);
+    }
+    else {
+        SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, (LONG_PTR)lightBackgroundBrush);
+        SetTextColor(GetDC(hwnd), lightTextColor);
+    }
+    RedrawWindow(hwnd, nullptr, nullptr, RDW_ERASE | RDW_INVALIDATE | RDW_FRAME | RDW_ALLCHILDREN);
+}
+
+// Основна функція обробки повідомлень вікна
+LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_CTLCOLORSTATIC: { // Обробка повідомлення про зміну кольору тексту для статичного елементу
+        HDC hdcStatic = (HDC)wParam;
+        SetTextColor(hdcStatic, RGB(0, 0, 0)); // Зміна кольору тексту
+        SetBkMode(hdcStatic, TRANSPARENT); // Прозорий фон
+        return (LRESULT)GetStockObject(NULL_BRUSH); // Повертаємо пензлик для прозорого фону
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == 1) { // ID кнопки "Зберегти"
+            // Отримуємо шлях до словника
+            WCHAR dictionaryPath[MAX_PATH];
+            GetDlgItemText(hwnd, 1000, dictionaryPath, MAX_PATH);
+            defaultDictionaryPath = dictionaryPath;
+
+            // Зберігаємо словник
+            SaveDictionary(defaultDictionaryPath);
+
+            HWND hThemeComboBox = GetDlgItem(hwnd, 1001); // Отримуємо дескриптор вибору теми
+            int themeIndex = SendMessageW(hThemeComboBox, CB_GETCURSEL, 0, 0); // Отримуємо вибрану тему
+            bool isDarkTheme = (themeIndex == 1); // Якщо індекс 1, обрана темна тема
+
+            // Викликаємо функцію для зміни теми вікна
+            ChangeTheme(hwnd, isDarkTheme);
+        }
+        break;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+    default:
+        return DefWindowProc(hwnd, message, wParam, lParam);
+    }
+    return 0;
+}
+
+int main() {
+    // Завантажуємо словник
+    LoadDictionary(defaultDictionaryPath);
+
+    // Виклик функції для створення вікна налаштувань
+    CreateSettingsWindow();
+
+    // Головний цикл обробки повідомлень
+    MSG msg;
+    while (GetMessage(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    // Звільнення ресурсів
+    DeleteObject(lightBackgroundBrush);
+    DeleteObject(darkBackgroundBrush);
+
+    return 0;
+}
